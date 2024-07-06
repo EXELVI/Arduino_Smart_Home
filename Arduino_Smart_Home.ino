@@ -1,8 +1,8 @@
 
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
-#include <Password.h> 
-#include <Keypad.h>   
+#include <Password.h>
+#include <Keypad.h>
 #include <Servo.h>
 #include <dht_nonblocking.h>
 #include <DS3231.h>
@@ -77,6 +77,12 @@ long interval = 1000;
 // Zones delay
 unsigned long previousMillisZones = 0;
 long intervalZones = 1000;
+
+// Siren delay
+unsigned long previousMillisSiren = 0;
+long intervalSiren = 1000;
+unsigned long previousMillisSiren2 = 0;
+long intervalSiren2 = 500;
 
 void setup()
 {
@@ -163,11 +169,6 @@ void loop()
           interval = 500;
       }
     }
-    else
-    {
-      digitalWrite(activeBuzzer, LOW);
-      noTone(passiveBuzzer);
-    }
   }
 
   // Fire sensor
@@ -186,6 +187,21 @@ void loop()
     }
     else
       delay(1000);
+  }
+
+  if (alarmStatus == 1)
+  {
+    if (currentMillis - previousMillisSiren >= intervalSiren)
+    {
+      previousMillisSiren = currentMillis;
+      tone(passiveBuzzer, buzzerState ? 500 : 4000);
+      buzzerState = !buzzerState;
+    }
+    if (currentMillis - previousMillisSiren2 >= intervalSiren2)
+    {
+      previousMillisSiren2 = currentMillis;
+      digitalWrite(activeBuzzer, !digitalRead(activeBuzzer));
+    }
   }
 
   if (!alarmActive && !adminMenu && !fireDet && !enteringPassword)
@@ -230,7 +246,7 @@ void loop()
   {
     if (digitalRead(pirPin1) == HIGH && !disabledZones[0])
     {
-      zones[0] = false;
+      zones[0] = true;
       alarmTriggered();
     }
     if (digitalRead(reedPin1) == LOW && !disabledZones[1])
@@ -261,7 +277,7 @@ void loop()
       lcd.print("                    ");
 
       int count = countTrue(zones, zonesCount);
-      Serial.println(count);
+
       if (count == 1)
         lastZoneDisplayed = 40;
 
@@ -518,7 +534,7 @@ void adminMenuKeyPressed(char key)
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Enter PIN:");
-    lcd.setCursor(0, 4);
+    lcd.setCursor(0, 3);
     lcd.print("D. Cancel");
 
     while (enteringPassword)
@@ -534,6 +550,8 @@ void adminMenuKeyPressed(char key)
           if (password.evaluate())
           {
             changingPIN = true;
+            password.reset();
+            passwd_pos = 10;
             break;
           }
           else
@@ -541,6 +559,8 @@ void adminMenuKeyPressed(char key)
             lcd.clear();
             lcd.setCursor(0, 0);
             lcd.print("Invalid PIN!");
+            password.reset();
+            passwd_pos = 10;
             delay(2000);
             enteringPassword = false;
           }
@@ -574,7 +594,7 @@ void adminMenuKeyPressed(char key)
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Enter New PIN:");
-    lcd.setCursor(0, 4);
+    lcd.setCursor(0, 3);
     lcd.print("D. Cancel");
 
     String newPIN = "";
@@ -590,7 +610,12 @@ void adminMenuKeyPressed(char key)
         {
           if (newPIN.length() == 4)
           {
-            password.set(newPIN.c_str());
+            char char1 = newPIN.charAt(0);
+            char char2 = newPIN.charAt(1);
+            char char3 = newPIN.charAt(2);
+            char char4 = newPIN.charAt(3);
+            char *newPINChar = new char[4]{char1, char2, char3, char4};
+            password = newPINChar;
             lcd.clear();
             lcd.setCursor(0, 0);
             lcd.print("PIN changed!");
@@ -602,6 +627,8 @@ void adminMenuKeyPressed(char key)
             lcd.clear();
             lcd.setCursor(0, 0);
             lcd.print("Invalid PIN!");
+            Serial.print("New PIN: ");
+            Serial.println(newPIN);
             delay(2000);
             changingPIN = false;
           }
@@ -682,13 +709,13 @@ void adminMenuKeyPressed(char key)
     }
     displayCodeEntryScreen();
   }
-  else
-    Serial.println("Unknown key pressed in admin menu");
 }
 
 void alarmTriggered()
 {
   alarmStatus = 1;
+  lcd.setCursor(0, 1);
+  lcd.print("Enter PIN:");
   lcd.setCursor(0, 2);
   lcd.print("  SYSTEM TRIGGERED  ");
   lcd.setCursor(0, 3);
@@ -707,6 +734,8 @@ void checkPassword()
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("FIRE ALARM OFF!");
+      digitalWrite(activeBuzzer, LOW);
+      noTone(passiveBuzzer);
       delay(2000);
       displayCodeEntryScreen();
     }
@@ -791,21 +820,22 @@ void activate()
   Serial.println(digitalRead(reedPin1));
   Serial.print("reedPin2: ");
   Serial.println(digitalRead(reedPin2));
-  if ((digitalRead(reedPin1) == HIGH) && (digitalRead(reedPin2) == HIGH))
+  if ((digitalRead(reedPin1) == HIGH || disabledZones[1]) && (digitalRead(reedPin2) == HIGH || disabledZones[2]))
   {
     digitalWrite(redLED, HIGH);
     digitalWrite(greenLED, LOW);
     digitalWrite(2, HIGH);
     lcd.setCursor(0, 0);
     lcd.print("SYSTEM ACTIVE!");
+
     alarmActive = 1;
     password.reset();
     passwd_pos = 10;
     delay(2000);
     lcd.setCursor(0, 1);
-    lcd.print("Enter PIN:");
-    lcd.setCursor(0, 1);
     lcd.print("                ");
+    lcd.setCursor(0, 1);
+    lcd.print("Enter PIN:");
   }
   else
   {
@@ -826,9 +856,15 @@ void deactivate()
   alarmStatus = 0;
   digitalWrite(redLED, LOW);
   digitalWrite(greenLED, HIGH);
+  digitalWrite(activeBuzzer, LOW);
+  noTone(passiveBuzzer);
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(" SYSTEM DEACTIVATED!");
+  zones[0] = false;
+  zones[1] = false;
+  zones[2] = false;
+  zones[3] = false;
   alarmActive = 0;
   password.reset();
   passwd_pos = 10;
@@ -859,7 +895,7 @@ void displayCodeEntryScreen()
     lcd.setCursor(0, 1);
     lcd.print("B: Admin Menu");
     lcd.setCursor(0, 2);
-    lcd.print("G.Led: C  G. Door: D");
+    lcd.print("1-3 Leds   D: Garage");
     if (display == 0)
     {
       lcd.setCursor(0, 3);
