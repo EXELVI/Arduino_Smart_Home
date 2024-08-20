@@ -336,7 +336,7 @@ void keypadEvent(KeypadEvent eKey)
     }
     else if (alarmActive == 1 || fireDet == 1 || enteringPassword)
     {
-      if (eKey == '#')
+      if (eKey == '#') 
       {
         enteringPassword = false;
         checkPassword();
